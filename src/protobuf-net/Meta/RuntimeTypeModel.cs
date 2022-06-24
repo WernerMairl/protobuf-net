@@ -20,10 +20,11 @@ using System.Threading;
 
 namespace ProtoBuf.Meta
 {
+
     /// <summary>
     /// Provides protobuf serialization support for a number of types that can be defined at runtime
     /// </summary>
-    public sealed class RuntimeTypeModel : TypeModel
+    public class RuntimeTypeModel : TypeModel
     {
         /// <summary>
         /// Ensures that RuntimeTypeModel has been initialized, in advance of using methods on <see cref="Serializer"/>.
@@ -552,8 +553,10 @@ namespace ProtoBuf.Meta
             CascadeDependents(list, temp, imports, origin);
         }
 
-        internal RuntimeTypeModel(bool isDefault, string name)
+        public bool IsLockFree { get; }
+        internal RuntimeTypeModel(bool isDefault, string name, bool lockFree)
         {
+            IsLockFree = lockFree;
             AutoAddMissingTypes = true;
             UseImplicitZeroDefaults = true;
             SetOption(RuntimeTypeModelOptions.IsDefaultModel, isDefault);
@@ -627,6 +630,7 @@ namespace ProtoBuf.Meta
 
         private void WaitOnLock()
         {
+            if (this.IsLockFree) return;
             int opaqueToken = 0;
             try
             {
@@ -1730,6 +1734,7 @@ namespace ProtoBuf.Meta
 #endif
         internal void TakeLock(ref int opaqueToken)
         {
+            if (this.IsLockFree) return;
             const string message = "Timeout while inspecting metadata; this may indicate a deadlock. This can often be avoided by preparing necessary serializers during application initialization, rather than allowing multiple threads to perform the initial metadata inspection; please also see the LockContended event";
             opaqueToken = 0;
             if (Monitor.TryEnter(types, metadataTimeoutMilliseconds))
@@ -1761,6 +1766,7 @@ namespace ProtoBuf.Meta
 
         internal void ReleaseLock(int opaqueToken)
         {
+            if (this.IsLockFree) return;
             if (opaqueToken != 0)
             {
                 Monitor.Exit(types);
@@ -1992,10 +1998,11 @@ namespace ProtoBuf.Meta
         /// optimal performance.
         /// </summary>
         /// <param name="name">The logical name of this model</param>
-        public static RuntimeTypeModel Create([CallerMemberName] string name = null)
+        public static RuntimeTypeModel Create([CallerMemberName] string name = null, bool lockFree = false)
         {
-            return new RuntimeTypeModel(false, name);
+            return new RuntimeTypeModel(false, name, lockFree);
         }
+
 
         private readonly string _name;
 
@@ -2110,7 +2117,7 @@ namespace ProtoBuf.Meta
             {
                 if (DefaultModel is not RuntimeTypeModel model)
                 {
-                    model = new RuntimeTypeModel(true, "(default)");
+                    model = new RuntimeTypeModel(true, "(default)", false);
                     SetDefaultModel(model);
                 }
                 return model;
